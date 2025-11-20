@@ -1,12 +1,13 @@
-                PDF Compressor
+                            ###   PDF Compressor   ###
 
 
-                  BUILD
+
+                                      BUILD
       
-      docker build -t pdf-compressor .
+                          docker build -t pdf-compressor .
 
 
 
-                  RUN
+                                       RUN
 
-      docker run -p 8000:8000 pdf-compressor
+                          docker run -p 8000:8000 pdf-compressor
