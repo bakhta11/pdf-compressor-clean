@@ -1,4 +1,4 @@
-                            ###   PDF Compressor   ###
+                            ---   PDF Compressor   ---
 
 
 
