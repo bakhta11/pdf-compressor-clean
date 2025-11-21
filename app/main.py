@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router as api_router
+from app.compress_word_pdf import router as compress_router
+
+app = FastAPI()
+
+app.include_router(compress_router)
 
 def create_app() -> FastAPI:
     app = FastAPI(title="PDF Compressor", version="1.0.0")
