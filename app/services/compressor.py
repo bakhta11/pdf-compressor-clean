@@ -1,99 +1,88 @@
-import io
-import subprocess
-import tempfile
-from typing import IO, Optional
+#import subprocess
+#import os
 
+
+#def compress_pdf(input_path: str) -> str:
+#    """
+#    Compress a PDF file using Ghostscript and return the output path.
+#    """
+
+    # Output filename: originalname_compressed.pdf
+#    output_path = input_path.rsplit(".", 1)[0] + "_compressed.pdf"
+
+#    gs_command = [
+#        "gs",
+#        "-sDEVICE=pdfwrite",
+#        "-dCompatibilityLevel=1.4",
+#        "-dPDFSETTINGS=/ebook",     # Medium compression (good quality). Can change.
+#        "-dNOPAUSE",
+#        "-dQUIET",
+#        "-dBATCH",
+#        f"-sOutputFile={output_path}",
+#        input_path
+#    ]
+
+#    try:
+#        subprocess.run(gs_command, check=True)
+#    except Exception as e:
+#        raise RuntimeError(f"PDF compression failed: {e}")
+
+    # Ensure the file actually exists
+#    if not os.path.exists(output_path):
+#        raise RuntimeError("Compression failed: output file not created")
+
+#    return output_path
+
+
+import subprocess
+import os
+
+
+# -----------------------------------------
+# Quality mapping for Ghostscript
+# -----------------------------------------
 QUALITY_MAP = {
-    "low": "/screen",
-    "medium": "/ebook",
-    "high": "/printer",
-    "veryhigh": "/prepress"
+    "low": "/screen",      # smallest file, lowest quality
+    "medium": "/ebook",    # balanced quality
+    "high": "/prepress"    # best quality
 }
 
-def compress_pdf(input_path: str, output_path: str, dpi: Optional[int] = None):
-    """Compress PDF with optional DPI override."""
-    cmd = [
+
+def compress_pdf(input_path: str, quality: str = "medium") -> str:
+    """
+    Compress a PDF using Ghostscript with selected quality (low, medium, high)
+    Returns the file path of the compressed PDF.
+    """
+
+    # Validate quality
+    if quality not in QUALITY_MAP:
+        raise ValueError(f"Invalid quality '{quality}'. Choose: low, medium, high.")
+
+    gs_quality = QUALITY_MAP[quality]
+
+    # Output filename
+    output_path = input_path.rsplit(".", 1)[0] + f"_{quality}_compressed.pdf"
+
+    # Ghostscript command
+    gs_command = [
         "gs",
         "-sDEVICE=pdfwrite",
         "-dCompatibilityLevel=1.4",
+        f"-dPDFSETTINGS={gs_quality}",
         "-dNOPAUSE",
+        "-dQUIET",
         "-dBATCH",
-    ]
-
-    if dpi:
-        cmd += [
-            "-dDownsampleColorImages=true",
-            f"-dColorImageResolution={dpi}"
-        ]
-
-    cmd += [
         f"-sOutputFile={output_path}",
         input_path
     ]
 
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(gs_command, check=True)
+    except Exception as e:
+        raise RuntimeError(f"PDF compression failed: {e}")
 
-def compress_pdf_stream(
-    input_stream: IO[bytes],
-    quality: str = "medium",
-    dpi: Optional[int] = None,
-    convert_images: bool = False,
-    strip_metadata: bool = False
-) -> io.BytesIO:
-    """
-    Compress PDF using Ghostscript (gs). Returns BytesIO of compressed PDF.
+    # Ensure file created
+    if not os.path.exists(output_path):
+        raise RuntimeError("Compression failed: Output PDF not created.")
 
-    Parameters:
-        input_stream: BytesIO of input PDF
-        quality: low, medium, high, veryhigh
-        dpi: Optional DPI override
-        convert_images: If True, convert images to JPEG
-        strip_metadata: If True, remove metadata
-    """
-    q = quality.lower().replace(" ", "")
-    gs_quality = QUALITY_MAP.get(q, QUALITY_MAP["medium"])
-
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as in_tmp, tempfile.NamedTemporaryFile(suffix=".pdf") as out_tmp:
-        # Write input PDF to temp file
-        in_tmp.write(input_stream.read())
-        in_tmp.flush()
-
-        cmd = [
-            "gs",
-            "-sDEVICE=pdfwrite",
-            "-dCompatibilityLevel=1.4",
-            f"-dPDFSETTINGS={gs_quality}",
-            "-dNOPAUSE",
-            "-dQUIET",
-            "-dBATCH",
-            f"-sOutputFile={out_tmp.name}"
-        ]
-
-        # Optional: DPI override
-        if dpi:
-            cmd += [
-                "-dDownsampleColorImages=true",
-                f"-dColorImageResolution={dpi}"
-            ]
-
-        # Optional: convert images to JPEG
-        if convert_images:
-            cmd += [
-                "-dConvertCMYKImagesToRGB=true",
-                "-dEncodeColorImages=true",
-                "-dColorImageFilter=/DCTEncode"  # Ghostscript uses JPEG
-            ]
-
-        # Optional: strip metadata
-        if strip_metadata:
-            cmd += ["-dRemoveAllMetadata=true"]
-
-        cmd.append(in_tmp.name)
-
-        try:
-            subprocess.check_call(cmd)
-            out_tmp.flush()
-            out_tmp.seek(0)
-            return io.BytesIO(out_tmp.read())
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError("Ghostscript failed: " + str(e))
+    return output_path

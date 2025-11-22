@@ -1,46 +1,139 @@
-from enum import Enum
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
-from fastapi.responses import StreamingResponse
-from app.services.compressor import compress_pdf_stream
-from app.utils.file_utils import secure_filename
-from typing import Optional
-import io
+#from fastapi.responses import FileResponse
+#from fastapi import APIRouter, UploadFile, File, HTTPException
+#import tempfile
+#import os
+#import subprocess
+#from app.services.compressor import compress_pdf
 
-class QualityEnum(str, Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
+#router = APIRouter()
+
+
+#def convert_word_to_pdf(input_path: str) -> str:
+#    output_dir = os.path.dirname(input_path)
+#    output_pdf = input_path.rsplit(".", 1)[0] + ".pdf"
+
+#    try:
+#        subprocess.run([
+#            "soffice",
+#            "--headless",
+#            "--convert-to", "pdf",
+#            "--outdir", output_dir,
+#            input_path
+#        ], check=True)
+#    except Exception as e:
+#        raise HTTPException(status_code=500, detail=f"Word to PDF conversion failed: {e}")
+
+#    return output_pdf
+
+
+#@router.post("/compress")
+#async def compress_file(file: UploadFile = File(...)):
+#    suffix = os.path.splitext(file.filename)[1]
+
+    # Save uploaded file
+#    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+#        tmp.write(await file.read())
+#        tmp_path = tmp.name
+
+    # Convert Word → PDF
+#    if file.content_type in [
+#        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+#        "application/msword",
+#    ]:
+#        tmp_path = convert_word_to_pdf(tmp_path)
+
+    # Reject unsupported types
+#    elif file.content_type != "application/pdf":
+#        os.remove(tmp_path)
+#        raise HTTPException(status_code=400, detail="Only PDF or Word files are accepted")
+
+    # Compress PDF
+#    output_path = compress_pdf(tmp_path)
+
+    # Return file for download
+#    return FileResponse(
+#        output_path,
+#        media_type="application/pdf",
+#        filename="compressed.pdf"
+#    )
+
+
+from fastapi.responses import FileResponse
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+import tempfile
+import os
+import subprocess
+from app.services.compressor import compress_pdf
 
 router = APIRouter()
 
-@router.post("/compress", summary="Compress a PDF and return it")
-async def compress(
-    file: UploadFile = File(...),
-    quality: QualityEnum = Form(QualityEnum.medium),
-    dpi: Optional[int] = Form(None),                 # Custom DPI override
-    convert_images: Optional[bool] = Form(False),    # Convert images to JPEG
-    strip_metadata: Optional[bool] = Form(False)    # Remove metadata
-):
-    # Validate PDF
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
-    
-    filename = secure_filename(file.filename or "uploaded.pdf")
-    input_data = await file.read()
-    input_stream = io.BytesIO(input_data)
 
-    # Call compressor with extra options
-    out_stream = compress_pdf_stream(
-        input_stream,
-        quality=quality,
-        dpi=dpi,
-        convert_images=convert_images,
-        strip_metadata=strip_metadata
+# ------------------------------------------------
+# Convert Word → PDF using LibreOffice
+# ------------------------------------------------
+def convert_word_to_pdf(input_path: str) -> str:
+    output_dir = os.path.dirname(input_path)
+    output_pdf = input_path.rsplit(".", 1)[0] + ".pdf"
+
+    try:
+        subprocess.run([
+            "soffice",
+            "--headless",
+            "--convert-to", "pdf",
+            "--outdir", output_dir,
+            input_path
+        ], check=True)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Word to PDF conversion failed: {e}"
+        )
+
+    # Ensure output exists
+    if not os.path.exists(output_pdf):
+        raise HTTPException(status_code=500, detail="Failed to create PDF from Word file")
+
+    return output_pdf
+
+
+# ------------------------------------------------
+# Upload → Convert Word (if needed) → Compress
+# ------------------------------------------------
+@router.post("/compress")
+async def compress_file(
+    file: UploadFile = File(...),
+    quality: str = Query(
+        "medium",
+        enum=["low", "medium", "high"],
+        description="Choose compression quality"
     )
-    
-    out_stream.seek(0)
-    return StreamingResponse(
-        out_stream,
+):
+
+    suffix = os.path.splitext(file.filename)[1]
+
+    # Save uploaded file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    # Handle Word file
+    if file.content_type in [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+    ]:
+        tmp_path = convert_word_to_pdf(tmp_path)
+
+    # Reject unsupported types
+    elif file.content_type != "application/pdf":
+        os.remove(tmp_path)
+        raise HTTPException(status_code=400, detail="Only PDF or Word files are accepted")
+
+    # Compress PDF (with selected quality)
+    output_path = compress_pdf(tmp_path, quality=quality)
+
+    # Return file for download
+    return FileResponse(
+        output_path,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename[:-4]}-compressed.pdf"}
+        filename=f"compressed_{quality}.pdf"
     )
